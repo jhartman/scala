@@ -307,7 +307,6 @@ extends collection.parallel.BucketCombiner[(K, V), ParHashMap[K, V], (K, V), Has
     private def evaluateCombiners(trie: HashMap[K, Combiner[V, Repr]]): Unit = trie match {
       case hm1: HashMap.HashMap1[_, _] =>
         hm1.asInstanceOf[HashMap.HashMap1[K, Repr]].value = hm1.value.result
-        hm1.kv = null
       case hmc: HashMap.HashMapCollision1[_, _] =>
         hmc.asInstanceOf[HashMap.HashMapCollision1[K, Repr]].kvs = hmc.kvs map { p => (p._1, p._2.result) }
       case htm: HashMap.HashTrieMap[_, _] =>

@@ -47,10 +47,10 @@ class HashMap[A, +B] extends Map[A,B] with MapLike[A, B, HashMap[A, B]] with Ser
     get0(key, computeHash(key), 0)
 
   override def updated [B1 >: B] (key: A, value: B1): HashMap[A, B1] =
-    updated0(key, computeHash(key), 0, value, null, null)
+    updated0(key, computeHash(key), 0, value, null)
 
   override def + [B1 >: B] (kv: (A, B1)): HashMap[A, B1] =
-    updated0(kv._1, computeHash(kv._1), 0, kv._2, kv, null)
+    updated0(kv._1, computeHash(kv._1), 0, kv._2, null)
 
   override def + [B1 >: B] (elem1: (A, B1), elem2: (A, B1), elems: (A, B1) *): HashMap[A, B1] =
     this + elem1 + elem2 ++ elems
@@ -74,8 +74,8 @@ class HashMap[A, +B] extends Map[A,B] with MapLike[A, B, HashMap[A, B]] with Ser
 
   private[collection] def get0(key: A, hash: Int, level: Int): Option[B] = None
 
-  private[collection] def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1), merger: Merger[B1]): HashMap[A, B1] = 
-    new HashMap.HashMap1(key, hash, value, kv)
+  private[collection] def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] =
+    new HashMap.HashMap1(key, hash, value)
 
   protected def removed0(key: A, hash: Int, level: Int): HashMap[A, B] = this
   
@@ -109,7 +109,7 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
   
   // TODO: add HashMap2, HashMap3, ...
   
-  class HashMap1[A,+B](private[HashMap] var key: A, private[HashMap] var hash: Int, private[collection] var value: (B @uV), private[collection] var kv: (A,B @uV)) extends HashMap[A,B] {
+  class HashMap1[A,+B](private[HashMap] var key: A, private[HashMap] var hash: Int, private[collection] var value: (B @uV)) extends HashMap[A,B] {
     override def size = 1
     
     private[collection] def getKey = key
@@ -134,10 +134,10 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
     //     }
     //   }
     
-    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1), merger: Merger[B1]): HashMap[A, B1] = 
+    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] =
       if (hash == this.hash && key == this.key ) {
-        if (merger eq null) new HashMap1(key, hash, value, kv)
-        else new HashMap1(key, hash, value, merger(this.kv, kv))
+        if (merger eq null) new HashMap1(key, hash, value)
+        else new HashMap1(key, hash, value)
       } else {
         var thatindex = (hash >>> level) & 0x1f
         var thisindex = (this.hash >>> level) & 0x1f
@@ -157,7 +157,7 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
           val bottelems = new Array[HashMap[A,B1]](2)
           val ind = if (thisindex < thatindex) 1 else 0
           bottelems(1 - ind) = this
-          bottelems(ind) = new HashMap1[A, B1](key, hash, value, kv)
+          bottelems(ind) = new HashMap1[A, B1](key, hash, value)
           val bottom = new HashTrieMap[A,B1]((1 << thisindex) | (1 << thatindex), bottelems, 2)
           if (prev ne null) {
             prev.elems(0) = bottom
@@ -172,11 +172,11 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
     override def removed0(key: A, hash: Int, level: Int): HashMap[A, B] = 
       if (hash == this.hash && key == this.key) HashMap.empty[A,B] else this
 
-    override def iterator: Iterator[(A,B)] = Iterator(ensurePair)
+    override def iterator: Iterator[(A,B)] = Iterator.single(ensurePair)
     override def foreach[U](f: ((A, B)) => U): Unit = f(ensurePair)
-    private[HashMap] def ensurePair: (A,B) = if (kv ne null) kv else { kv = (key, value); kv }
+    private[HashMap] def ensurePair: (A,B) = (key, value)
     protected override def merge0[B1 >: B](that: HashMap[A, B1], level: Int, merger: Merger[B1]): HashMap[A, B1] = {
-      that.updated0(key, hash, level, value, kv, merger)
+      that.updated0(key, hash, level, value, merger)
     }
   }
 
@@ -188,16 +188,16 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
     override def get0(key: A, hash: Int, level: Int): Option[B] = 
       if (hash == this.hash) kvs.get(key) else None
 
-    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1), merger: Merger[B1]): HashMap[A, B1] = 
+    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] =
       if (hash == this.hash) {
         if ((merger eq null) || !kvs.contains(key)) new HashMapCollision1(hash, kvs.updated(key, value))
-        else new HashMapCollision1(hash, kvs + merger((key, kvs(key)), kv))
+        else new HashMapCollision1(hash, kvs + merger((key, kvs(key)), (key, value)))
       } else {
         var m: HashMap[A,B1] = new HashTrieMap[A,B1](0,new Array[HashMap[A,B1]](0),0)
         // might be able to save some ops here, but it doesn't seem to be worth it
         for ((k,v) <- kvs)
-          m = m.updated0(k, this.hash, level, v, null, merger)
-        m.updated0(key, hash, level, value, kv, merger)
+          m = m.updated0(k, this.hash, level, v, merger)
+        m.updated0(key, hash, level, value, merger)
       }
       
     override def removed0(key: A, hash: Int, level: Int): HashMap[A, B] = 
@@ -219,7 +219,7 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
     protected override def merge0[B1 >: B](that: HashMap[A, B1], level: Int, merger: Merger[B1]): HashMap[A, B1] = {
       // this can be made more efficient by passing the entire ListMap at once
       var m = that
-      for (p <- kvs) m = m.updated0(p._1, this.hash, level, p._2, p, merger)
+      for (p <- kvs) m = m.updated0(p._1, this.hash, level, p._2, merger)
       m
     }
   }
@@ -263,7 +263,7 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
         None
     }
     
-    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1), merger: Merger[B1]): HashMap[A, B1] = {
+    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] = {
       val index = (hash >>> level) & 0x1f
       val mask = (1 << index)
       val offset = Integer.bitCount(bitmap & (mask-1))
@@ -272,13 +272,13 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
         Array.copy(elems, 0, elemsNew, 0, elems.length)
         val sub = elems(offset)
         // TODO: might be worth checking if sub is HashTrieMap (-> monomorphic call site)
-        val subNew = sub.updated0(key, hash, level + 5, value, kv, merger)
+        val subNew = sub.updated0(key, hash, level + 5, value, merger)
         elemsNew(offset) = subNew
         new HashTrieMap(bitmap, elemsNew, size + (subNew.size - sub.size))
       } else {
         val elemsNew = new Array[HashMap[A,B1]](elems.length + 1)
         Array.copy(elems, 0, elemsNew, 0, offset)
-        elemsNew(offset) = new HashMap1(key, hash, value, kv)
+        elemsNew(offset) = new HashMap1(key, hash, value)
         Array.copy(elems, offset, elemsNew, offset + 1, elems.length - offset)
         new HashTrieMap(bitmap | mask, elemsNew, size + 1)
       }
@@ -390,7 +390,7 @@ time { mNew.iterator.foreach( p => ()) }
     protected override def merge0[B1 >: B](that: HashMap[A, B1], level: Int, merger: Merger[B1]): HashMap[A, B1] = that match {
       case hm: HashMap1[_, _] =>
         // onetrie += 1
-        this.updated0(hm.key, hm.hash, level, hm.value.asInstanceOf[B1], hm.kv, merger)
+        this.updated0(hm.key, hm.hash, level, hm.value.asInstanceOf[B1], merger)
       case hm: HashTrieMap[_, _] =>
         // bothtries += 1
         val that = hm.asInstanceOf[HashTrieMap[A, B1]]
