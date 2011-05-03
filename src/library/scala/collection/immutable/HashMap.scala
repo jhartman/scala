@@ -210,7 +210,6 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
       } else {
         var thatindex = (hash >>> level) & 0x1f
         var thisindex1 = (this.hash1 >>> level) & 0x1f
-        var thisindex2 = (this.hash2 >>> level) & 0x1f
 
         if(hash == this.hash1 && hash == this.hash2) {
           // two 32-bit hash collisions.
@@ -230,7 +229,7 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
             }
             val bottelems = new Array[HashMap[A,B1]](2)
             val ind = if (thisindex1 < thatindex) 1 else 0
-            bottelems(1 - ind) = this
+            bottelems(1 - ind) = new HashMap1[A, B1](this.key1, this.hash1, this.value1)
             bottelems(ind) = new HashMap1[A, B1](key, hash, value)
             val bottom = new HashTrieMap[A,B1]((1 << thisindex1) | (1 << thatindex), bottelems, 2)
             if (prev ne null) {
