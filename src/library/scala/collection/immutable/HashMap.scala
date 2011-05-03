@@ -111,62 +111,15 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
   
   class HashMap1[A,+B](private[HashMap] var key: A, private[HashMap] var hash: Int, private[collection] var value: (B @uV)) extends HashMap[A,B] {
     override def size = 1
-    
-    private[collection] def getKey = key
-    private[collection] def getHash = hash
-    private[collection] def computeHashFor(k: A) = computeHash(k)
-    
+
     override def get0(key: A, hash: Int, level: Int): Option[B] = 
       if (hash == this.hash && key == this.key) Some(value) else None
 
-    // override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1)): HashMap[A, B1] = 
-    //   if (hash == this.hash && key == this.key) new HashMap1(key, hash, value, kv)
-    //   else {
-    //     var thatindex = (hash >>> level) & 0x1f
-    //     var thisindex = (this.hash >>> level) & 0x1f
-    //     if (hash != this.hash) {
-    //       --new HashTrieMap[A,B1](level+5, this, new HashMap1(key, hash, value, kv)) 
-    //       val m = new HashTrieMap[A,B1](0,new Array[HashMap[A,B1]](0),0) // TODO: could save array alloc
-    //       m.updated0(this.key, this.hash, level, this.value, this.kv).updated0(key, hash, level, value, kv)  TODO and it will
-    //     } else {
-    //        32-bit hash collision (rare, but not impossible)
-    //       new HashMapCollision1(hash, ListMap.empty.updated(this.key,this.value).updated(key,value))
-    //     }
-    //   }
-    
     override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] =
       if (hash == this.hash && key == this.key ) {
-        if (merger eq null) new HashMap1(key, hash, value)
-        else new HashMap1(key, hash, value)
+        new HashMap1(key, hash, value)
       } else {
-        var thatindex = (hash >>> level) & 0x1f
-        var thisindex = (this.hash >>> level) & 0x1f
-        if (hash != this.hash) {
-          // they have different hashes, but may collide at this level - find a level at which they don't
-          var lvl = level
-          var top: HashTrieMap[A, B1] = null
-          var prev: HashTrieMap[A, B1] = null
-          while (thisindex == thatindex) {
-            val newlevel = new HashTrieMap[A, B1](1 << thisindex, new Array[HashMap[A, B1]](1), 2)
-            if (prev ne null) prev.elems(0) = newlevel else top = newlevel
-            prev = newlevel
-            lvl += 5
-            thatindex = (hash >>> lvl) & 0x1f
-            thisindex = (this.hash >>> lvl) & 0x1f
-          }
-          val bottelems = new Array[HashMap[A,B1]](2)
-          val ind = if (thisindex < thatindex) 1 else 0
-          bottelems(1 - ind) = this
-          bottelems(ind) = new HashMap1[A, B1](key, hash, value)
-          val bottom = new HashTrieMap[A,B1]((1 << thisindex) | (1 << thatindex), bottelems, 2)
-          if (prev ne null) {
-            prev.elems(0) = bottom
-            top
-          } else bottom
-        } else {
-          // 32-bit hash collision (rare, but not impossible)
-          new HashMapCollision1(hash, ListMap.empty.updated(this.key,this.value).updated(key,value))
-        }
+        new HashMap2(this.key, this.hash, this.value, key, hash, value)
       }
       
     override def removed0(key: A, hash: Int, level: Int): HashMap[A, B] = 
@@ -223,6 +176,95 @@ object HashMap extends ImmutableMapFactory[HashMap] with BitOperations.Int {
       m
     }
   }
+
+  class HashMap2[A,+B](private[HashMap] var key1: A, private[HashMap] var hash1: Int, private[collection] var value1: (B @uV),
+                       private[HashMap] var key2: A, private[HashMap] var hash2: Int, private[collection] var value2: (B @uV)) extends HashMap[A,B] {
+    override def size = 2
+
+    override def get0(key: A, hash: Int, level: Int): Option[B] =
+      if (hash == this.hash1 && key == this.key1) Some(value1)
+      else if(hash == this.hash2 && key == this.key2) Some(value2)
+      else None
+
+    // override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, kv: (A, B1)): HashMap[A, B1] =
+    //   if (hash == this.hash && key == this.key) new HashMap1(key, hash, value, kv)
+    //   else {
+    //     var thatindex = (hash >>> level) & 0x1f
+    //     var thisindex = (this.hash >>> level) & 0x1f
+    //     if (hash != this.hash) {
+    //       --new HashTrieMap[A,B1](level+5, this, new HashMap1(key, hash, value, kv))
+    //       val m = new HashTrieMap[A,B1](0,new Array[HashMap[A,B1]](0),0) // TODO: could save array alloc
+    //       m.updated0(this.key, this.hash, level, this.value, this.kv).updated0(key, hash, level, value, kv)  TODO and it will
+    //     } else {
+    //        32-bit hash collision (rare, but not impossible)
+    //       new HashMapCollision1(hash, ListMap.empty.updated(this.key,this.value).updated(key,value))
+    //     }
+    //   }
+
+
+    override def updated0[B1 >: B](key: A, hash: Int, level: Int, value: B1, merger: Merger[B1]): HashMap[A, B1] =
+      if (hash == this.hash1 && key == this.key1) {
+        new HashMap2(key, hash, value, this.key2, this.hash2, this.value2)
+      } else if(hash == this.hash2 && key == this.key2) {
+        new HashMap2(this.key1, this.hash1, this.value1, key, hash, value)
+      } else {
+        var thatindex = (hash >>> level) & 0x1f
+        var thisindex1 = (this.hash1 >>> level) & 0x1f
+        var thisindex2 = (this.hash2 >>> level) & 0x1f
+
+        if(hash == this.hash1 && hash == this.hash2) {
+          // two 32-bit hash collisions.
+          new HashMapCollision1(hash, ListMap.empty.updated(key1,value1).updated(key2,value2).updated(key,value))
+        } else {
+          val first = if(hash != this.hash1) {
+            var lvl = level
+            var top: HashTrieMap[A, B1] = null
+            var prev: HashTrieMap[A, B1] = null
+            while (thisindex1 == thatindex) {
+              val newlevel = new HashTrieMap[A, B1](1 << thisindex1, new Array[HashMap[A, B1]](1), 2)
+              if (prev ne null) prev.elems(0) = newlevel else top = newlevel
+              prev = newlevel
+              lvl += 5
+              thatindex = (hash >>> lvl) & 0x1f
+              thisindex1 = (this.hash1 >>> lvl) & 0x1f
+            }
+            val bottelems = new Array[HashMap[A,B1]](2)
+            val ind = if (thisindex1 < thatindex) 1 else 0
+            bottelems(1 - ind) = this
+            bottelems(ind) = new HashMap1[A, B1](key, hash, value)
+            val bottom = new HashTrieMap[A,B1]((1 << thisindex1) | (1 << thatindex), bottelems, 2)
+            if (prev ne null) {
+              prev.elems(0) = bottom
+              top
+            } else bottom
+          } else {
+            new HashMap2[A, B1](this.key1, hash, this.value1, key, hash, value)
+          }
+
+          first.updated0(key2, hash2, level, value2, merger)
+        }
+      }
+
+
+    override def removed0(key: A, hash: Int, level: Int): HashMap[A, B] =
+      if (hash == this.hash1 && key == this.key1)
+        new HashMap1(this.key2, this.hash2, this.value2)
+      else if(hash == this.hash2 && key == this.key2)
+        new HashMap1(this.key1, this.hash1, this.value1)
+      else
+        this
+
+    override def iterator: Iterator[(A,B)] = Iterator((key1, value1), (key2, value2))
+    override def foreach[U](f: ((A, B)) => U): Unit = {
+      f((key1, value1))
+      f((key2, value2))
+    }
+    protected override def merge0[B1 >: B](that: HashMap[A, B1], level: Int, merger: Merger[B1]): HashMap[A, B1] = {
+      that.updated0(key1, hash1, level, value1, merger)
+      .updated0(key2, hash2, level, value2, merger)
+    }
+  }
+
   
   class HashTrieMap[A, +B](
     private[HashMap] var bitmap: Int,
